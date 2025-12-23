@@ -13,12 +13,10 @@
             overflow: hidden;
             background-color: #050505;
             font-family: 'Orbitron', sans-serif;
-            touch-action: none; /* Отключаем зум и скролл */
+            touch-action: none;
         }
 
-        canvas {
-            display: block;
-        }
+        canvas { display: block; }
 
         #ui-layer {
             position: absolute;
@@ -41,13 +39,6 @@
             font-weight: 900;
         }
 
-        .high-score {
-            font-size: 14px;
-            color: #f0f;
-            text-shadow: 0 0 5px #f0f;
-            margin-top: 5px;
-        }
-
         #menu {
             position: absolute;
             top: 50%;
@@ -59,17 +50,8 @@
             padding: 40px;
             border-radius: 20px;
             border: 2px solid #0ff;
-            box-shadow: 0 0 20px #0ff, inset 0 0 20px rgba(0, 255, 255, 0.2);
+            box-shadow: 0 0 20px #0ff;
             backdrop-filter: blur(5px);
-        }
-
-        h1 {
-            color: #fff;
-            margin: 0 0 20px 0;
-            font-size: 32px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            text-shadow: 2px 2px 0 #f0f;
         }
 
         button {
@@ -82,21 +64,7 @@
             font-weight: bold;
             cursor: pointer;
             text-transform: uppercase;
-            transition: 0.2s;
             box-shadow: 0 0 10px #0ff;
-        }
-
-        button:active {
-            background: #0ff;
-            color: #000;
-            box-shadow: 0 0 20px #0ff;
-            transform: scale(0.95);
-        }
-
-        #tutorial {
-            color: rgba(255,255,255,0.6);
-            margin-top: 20px;
-            font-size: 12px;
         }
     </style>
 </head>
@@ -105,30 +73,24 @@
     <canvas id="gameCanvas"></canvas>
 
     <div id="ui-layer">
-        <div>
-            <div class="score-board">SCORE: <span id="scoreVal">0</span></div>
-            <div class="high-score">BEST: <span id="highScoreVal">0</span></div>
-        </div>
+        <div class="score-board">SCORE: <span id="scoreVal">0</span></div>
     </div>
 
     <div id="menu">
-        <h1 id="menuTitle">NEON VOID</h1>
+        <h1 style="color:#fff">NEON VOID</h1>
         <button id="startBtn">START GAME</button>
-        <div id="tutorial">Drag finger to move</div>
+        <p style="color:#aaa; font-size:12px; margin-top:15px;">Drag to move</p>
     </div>
 
     <script>
-        // --- Инициализация Telegram WebApp ---
         const tg = window.Telegram.WebApp;
-        tg.expand(); // Разворачиваем на весь экран
+        tg.expand();
         tg.ready();
 
-        // --- Настройка Canvas ---
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        
-        // Автоматический ресайз
-        let width, height;
+        let width, height, player, enemies = [], frame = 0, score = 0, gameActive = false;
+
         function resize() {
             width = window.innerWidth;
             height = window.innerHeight;
@@ -138,61 +100,15 @@
         window.addEventListener('resize', resize);
         resize();
 
-        // --- Состояние игры ---
-        const state = {
-            playing: false,
-            score: 0,
-            speed: 0,
-            highScore: localStorage.getItem('neon_runner_best') || 0,
-            frame: 0
-        };
-
-        document.getElementById('highScoreVal').innerText = state.highScore;
-
-        // --- Классы сущностей ---
-
-        // Игрок
         class Player {
             constructor() {
                 this.x = width / 2;
                 this.y = height - 100;
                 this.size = 20;
-                this.color = '#0ff';
-                this.trail = [];
             }
-
-            update(inputX) {
-                // Плавное движение к пальцу (lerp)
-                this.x += (inputX - this.x) * 0.15;
-                
-                // Ограничение экраном
-                if (this.x < this.size) this.x = this.size;
-                if (this.x > width - this.size) this.x = width - this.size;
-
-                // Создаем шлейф
-                if (state.frame % 3 === 0) {
-                    this.trail.push({x: this.x, y: this.y, alpha: 1});
-                }
-                
-                // Удаляем старый шлейф
-                this.trail.forEach(t => t.alpha -= 0.05);
-                this.trail = this.trail.filter(t => t.alpha > 0);
-            }
-
             draw() {
-                // Рисуем шлейф
-                this.trail.forEach(t => {
-                    ctx.globalAlpha = t.alpha * 0.5;
-                    ctx.fillStyle = this.color;
-                    ctx.beginPath();
-                    ctx.arc(t.x, t.y, this.size * 0.8, 0, Math.PI * 2);
-                    ctx.fill();
-                });
-                ctx.globalAlpha = 1;
-
-                // Рисуем игрока (треугольник)
-                ctx.shadowBlur = 20;
-                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#0ff';
                 ctx.fillStyle = '#fff';
                 ctx.beginPath();
                 ctx.moveTo(this.x, this.y - this.size);
@@ -200,245 +116,71 @@
                 ctx.lineTo(this.x + this.size, this.y + this.size);
                 ctx.closePath();
                 ctx.fill();
-                ctx.shadowBlur = 0;
             }
         }
 
-        // Враги
         class Enemy {
             constructor() {
-                this.size = Math.random() * 20 + 15;
-                this.x = Math.random() * (width - this.size * 2) + this.size;
+                this.x = Math.random() * width;
                 this.y = -50;
-                this.speed = state.speed + Math.random() * 2;
-                // Неоновый цвет (магента или оранжевый)
-                this.color = Math.random() > 0.5 ? '#f0f' : '#fa0';
-                this.rotation = 0;
-                this.rotSpeed = (Math.random() - 0.5) * 0.1;
+                this.size = 20;
+                this.speed = 5 + (score / 10);
             }
-
-            update() {
-                this.y += this.speed;
-                this.rotation += this.rotSpeed;
-            }
-
             draw() {
-                ctx.save();
-                ctx.translate(this.x, this.y);
-                ctx.rotate(this.rotation);
-                ctx.shadowBlur = 15;
-                ctx.shadowColor = this.color;
-                ctx.strokeStyle = '#fff';
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#f0f';
+                ctx.strokeStyle = '#f0f';
                 ctx.lineWidth = 3;
-                ctx.fillStyle = this.color;
-                
-                // Рисуем квадрат
-                ctx.beginPath();
-                ctx.rect(-this.size/2, -this.size/2, this.size, this.size);
-                ctx.globalAlpha = 0.6;
-                ctx.fill();
-                ctx.globalAlpha = 1;
-                ctx.stroke();
-                
-                ctx.restore();
+                ctx.strokeRect(this.x, this.y, this.size, this.size);
             }
         }
 
-        // Частицы (взрыв)
-        class Particle {
-            constructor(x, y, color) {
-                this.x = x;
-                this.y = y;
-                this.color = color;
-                const angle = Math.random() * Math.PI * 2;
-                const speed = Math.random() * 5 + 2;
-                this.vx = Math.cos(angle) * speed;
-                this.vy = Math.sin(angle) * speed;
-                this.life = 1;
-                this.decay = Math.random() * 0.03 + 0.02;
-            }
-
-            update() {
-                this.x += this.vx;
-                this.y += this.vy;
-                this.life -= this.decay;
-            }
-
-            draw() {
-                ctx.globalAlpha = this.life;
-                ctx.fillStyle = this.color;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.globalAlpha = 1;
-            }
+        function spawnEnemy() {
+            if (frame % 30 === 0) enemies.push(new Enemy());
         }
 
-        // Фон (звезды)
-        const stars = [];
-        for(let i=0; i<50; i++) {
-            stars.push({
-                x: Math.random() * width,
-                y: Math.random() * height,
-                size: Math.random() * 2,
-                speed: Math.random() * 3 + 0.5
-            });
-        }
-
-        // --- Основная логика ---
-
-        let player;
-        let enemies = [];
-        let particles = [];
-        let inputX = width / 2;
-        let animationId;
-
-        // Обработка ввода (Мышь + Тач)
-        function handleInput(x) {
-            inputX = x;
-        }
-
-        window.addEventListener('mousemove', e => handleInput(e.clientX));
-        window.addEventListener('touchmove', e => {
-            e.preventDefault(); // Блокируем скролл
-            handleInput(e.touches[0].clientX);
-        }, {passive: false});
-        window.addEventListener('touchstart', e => {
-             handleInput(e.touches[0].clientX);
-        }, {passive: false});
-
-
-        function startGame() {
-            state.playing = true;
-            state.score = 0;
-            state.speed = 5;
-            state.frame = 0;
-            
-            player = new Player();
-            enemies = [];
-            particles = [];
-            inputX = width / 2; // Сброс позиции
-
-            document.getElementById('menu').style.display = 'none';
-            document.getElementById('scoreVal').innerText = '0';
-            
-            // Вибрация при старте (если поддерживается TWA)
-            if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
-
-            loop();
-        }
-
-        function gameOver() {
-            state.playing = false;
-            cancelAnimationFrame(animationId);
-            
-            // Эффект взрыва игрока
-            for(let i=0; i<30; i++) {
-                particles.push(new Particle(player.x, player.y, '#0ff'));
-            }
-            
-            // Отрисовка последнего кадра взрыва
-            drawGame(); 
-
-            // Логика рекорда
-            if (state.score > state.highScore) {
-                state.highScore = state.score;
-                localStorage.setItem('neon_runner_best', state.highScore);
-                document.getElementById('highScoreVal').innerText = state.highScore;
-            }
-
-            // Вибрация смерти
-            if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
-
-            // Показ меню
-            setTimeout(() => {
-                document.getElementById('menuTitle').innerText = 'GAME OVER';
-                document.getElementById('startBtn').innerText = 'TRY AGAIN';
-                document.getElementById('menu').style.display = 'block';
-            }, 500); // Небольшая задержка чтобы увидеть взрыв
-        }
-
-        function drawGame() {
-            // Очистка фона
+        function update() {
+            if (!gameActive) return;
             ctx.fillStyle = '#050505';
             ctx.fillRect(0, 0, width, height);
 
-            // Рисуем звезды
-            ctx.fillStyle = '#fff';
-            stars.forEach(star => {
-                star.y += star.speed + (state.playing ? state.speed * 0.2 : 0);
-                if(star.y > height) star.y = 0;
-                ctx.globalAlpha = Math.random() * 0.5 + 0.3;
-                ctx.beginPath();
-                ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
-                ctx.fill();
-            });
-            ctx.globalAlpha = 1;
-
-            // Частицы
-            particles.forEach((p, index) => {
-                p.update();
-                p.draw();
-                if(p.life <= 0) particles.splice(index, 1);
-            });
-
-            if(!state.playing && particles.length > 0) {
-                 requestAnimationFrame(drawGame);
-                 return;
-            }
-
-            if (!state.playing) return;
-
-            // Игрок
-            player.update(inputX);
             player.draw();
 
-            // Враги
             enemies.forEach((enemy, index) => {
-                enemy.update();
+                enemy.y += enemy.speed;
                 enemy.draw();
 
-                // Проверка столкновения (упрощенная)
-                const dx = player.x - enemy.x;
-                const dy = (player.y) - enemy.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-
-                if (distance < player.size + enemy.size * 0.8) {
-                    gameOver();
+                if (enemy.y > height) {
+                    enemies.splice(index, 1);
+                    score++;
+                    document.getElementById('scoreVal').innerText = score;
                 }
 
-                // Удаление врагов за экраном
-                if (enemy.y > height + 50) {
-                    enemies.splice(index, 1);
-                    state.score++;
-                    document.getElementById('scoreVal').innerText = state.score;
-                    
-                    // Увеличение сложности
-                    if(state.score % 10 === 0) {
-                        state.speed += 0.5;
-                        if(tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
-                    }
+                // Коллизия
+                if (Math.abs(player.x - enemy.x) < 30 && Math.abs(player.y - enemy.y) < 30) {
+                    gameActive = false;
+                    if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+                    document.getElementById('menu').style.display = 'block';
                 }
             });
+
+            frame++;
+            requestAnimationFrame(update);
         }
 
-        function loop() {
-            if (!state.playing) return;
+        window.addEventListener('touchmove', (e) => {
+            player.x = e.touches[0].clientX;
+        });
 
-            state.frame++;
-
-            // Спавн врагов
-            if (state.frame % Math.max(20, 60 - Math.floor(state.score / 2)) === 0) {
-                enemies.push(new Enemy());
-            }
-
-            drawGame();
-            animationId = requestAnimationFrame(loop);
-        }
-
-        // Старт по кнопке
-        document.getElementById('startBtn').addEventListener('click', startGame);
-
+        document.getElementById('startBtn').onclick = () => {
+            gameActive = true;
+            score = 0;
+            enemies = [];
+            player = new Player();
+            document.getElementById('menu').style.display = 'none';
+            if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+            update();
+        };
     </script>
 </body>
 </html>
